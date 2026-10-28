@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/assert.h"
+#include "common/frame_diag.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "common/thread.h"
@@ -23,7 +24,9 @@ ThreadManager::ThreadManager(Core::System& system_)
     : system{system_}
 {}
 
-ThreadManager::~ThreadManager() = default;
+ThreadManager::~ThreadManager() {
+    EDEN_DIAG_SHUTDOWN();
+}
 
 void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Frontend::GraphicsContext& context, Tegra::Control::Scheduler& scheduler) {
     rasterizer = renderer.ReadRasterizer();
@@ -41,6 +44,7 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                 break;
             }
             if (auto* submit_list = std::get_if<SubmitListCommand>(&next.data)) {
+                EDEN_DIAG_SCOPE(::Common::FrameDiag::Stage::GpuBatchProcess);
                 scheduler.Push(system.GPU(), submit_list->channel, std::move(submit_list->entries));
             } else if (std::holds_alternative<GPUTickCommand>(next.data)) {
                 system.GPU().TickWork();

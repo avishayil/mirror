@@ -51,6 +51,8 @@ add_library(
     fiber.cpp
     fiber.h
     fixed_point.h
+    frame_diag.cpp
+    frame_diag.h
     free_region_manager.h
     fs/file.cpp
     fs/file.h

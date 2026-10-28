@@ -16,6 +16,7 @@
 #include "common/assert.h"
 #include "common/bit_util.h"
 #include "common/common_funcs.h"
+#include "common/frame_diag.h"
 #include "common/common_types.h"
 #include "common/fiber.h"
 #include "common/logging.h"
@@ -1371,6 +1372,7 @@ namespace Kernel {
                 return;
             }
 
+            EDEN_DIAG_SPAN_BEGIN(m_diag_runnable_ns);
             m_wait_queue->EndWait(kernel, this, wait_result);
         }
     }

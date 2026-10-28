@@ -112,3 +112,13 @@ human-tested, and disclose AI assistance (`Assisted-by:` in commit + PR); no AI
 `Signed-off-by`/`Co-authored-by`. See `./review_notes.md`. This branch is for
 review on a personal fork, not an upstream PR. No asserts were disabled; no speculative
 memory/correctness changes were landed; the open-problem fixes (§4/§5) are explicitly *not* landed.
+
+### AI-assistance disclosure — frame_diag instrumentation (2026-10-28)
+The `EDEN_FRAME_DIAG` per-frame profiler (`common/frame_diag.{h,cpp}` + the gated stamps listed in
+`overworld_latency_analysis.md`) was drafted with Claude (Claude Code, Opus 4.8). The repo owner
+explicitly approved, as a one-off exception to the `AI.md` human-build/human-test expectation, for
+the AI to build the instrumented APK and run the on-device measurements (the NCE-vs-Dynarmic A/B and
+the capture dumps) itself. The repo owner then also authorized the AI to create and push this commit
+to the **personal-fork** branch `fork/pixel10-powervr-fixes` (avishayil/mirror), with an `Assisted-by:`
+footer and no AI `Signed-off-by`/`Co-authored-by`. This stays a personal-fork review branch, not an
+upstream submission; any upstream PR must still be human-authored and human-tested per `AI.md`.

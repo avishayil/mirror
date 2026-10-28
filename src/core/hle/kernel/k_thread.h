@@ -889,6 +889,14 @@ private:
     SyncObjectBuffer m_sync_object_buffer{};
     s64 m_schedule_count{};
     s64 m_last_scheduled_tick{};
+#ifdef EDEN_FRAME_DIAG
+public:
+    // Start stamp (ns) for the runnable->running handoff span; set at EndWait, read when this
+    // thread is switched to and when it re-enters guest. See common/frame_diag.h.
+    s64 m_diag_runnable_ns{};
+
+private:
+#endif
     std::array<QueueEntry, Core::Hardware::NUM_CPU_CORES> m_per_core_priority_queue_entry{};
     KThreadQueue* m_wait_queue{};
     LockWithPriorityInheritanceInfoList m_held_lock_info_list{};

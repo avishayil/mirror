@@ -7,6 +7,7 @@
 #include <cinttypes>
 #include <memory>
 
+#include "common/frame_diag.h"
 #include "common/signal_chain.h"
 #include "core/arm/nce/arm_nce.h"
 #include "core/arm/nce/interpreter_visitor.h"
@@ -226,8 +227,10 @@ HaltReason ArmNce::RunThread(Kernel::KThread* thread) {
     // to deal with dynamic loading of NROs.
     const auto& post_handlers = process->GetPostHandlers();
     if (auto it = post_handlers.find(m_guest_ctx.pc); it != post_handlers.end()) {
+        EDEN_DIAG_COUNT(::Common::FrameDiag::Stage::NceTrampolineReturn);
         hr = ReturnToRunCodeByTrampoline(thread_params, &m_guest_ctx, it->second);
     } else {
+        EDEN_DIAG_COUNT(::Common::FrameDiag::Stage::NceSignalReturn);
         hr = ReturnToRunCodeByExceptionLevelChange(m_thread_id, thread_params);  // Android: Use "process handle SIGUSR2 -n true -p true -s false" (and SIGURG) in LLDB when debugging
     }
 

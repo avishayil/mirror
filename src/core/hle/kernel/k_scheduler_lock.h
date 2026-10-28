@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include "common/assert.h"
+#include "common/frame_diag.h"
 #include "core/hle/kernel/k_interrupt_manager.h"
 #include "core/hle/kernel/k_spin_lock.h"
 #include "core/hle/kernel/k_thread.h"
@@ -33,13 +34,17 @@ public:
         } else {
             // Otherwise, we want to disable scheduling and acquire the spinlock.
             SchedulerType::DisableScheduling(m_kernel);
-            m_spin_lock.Lock();
+            {
+                EDEN_DIAG_SCOPE(::Common::FrameDiag::Stage::SchedLockWait);
+                m_spin_lock.Lock();
+            }
 
             ASSERT(m_lock_count == 0);
             ASSERT(m_owner_thread == nullptr);
 
             // Take ownership of the lock.
             m_owner_thread = GetCurrentThreadPointer(m_kernel);
+            EDEN_DIAG_SPAN_BEGIN(m_diag_hold_start_ns);
         }
 
         // Increment the lock count.
@@ -60,6 +65,7 @@ public:
                 SchedulerType::UpdateHighestPriorityThreads(m_kernel);
 
             // Note that we no longer hold the lock, and unlock the spinlock.
+            EDEN_DIAG_SPAN_END(m_diag_hold_start_ns, ::Common::FrameDiag::Stage::SchedLockHold);
             m_owner_thread = nullptr;
             m_spin_lock.Unlock();
 
@@ -75,6 +81,9 @@ private:
     KAlignedSpinLock m_spin_lock{};
     s32 m_lock_count{};
     std::atomic<KThread*> m_owner_thread{};
+#ifdef EDEN_FRAME_DIAG
+    s64 m_diag_hold_start_ns{};
+#endif
 };
 
 } // namespace Kernel

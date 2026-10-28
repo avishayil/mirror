@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2020 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "common/frame_diag.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "core/core.h"
@@ -99,6 +100,11 @@ void PhysicalCore::RunThread(KernelCore& kernel, Kernel::KThread* thread) {
                     thread->SetStepState(StepState::StepPerformed);
                 }
             } else {
+                EDEN_DIAG_SPAN_END(thread->m_diag_runnable_ns,
+                                   ::Common::FrameDiag::Stage::HandoffEndWaitToGuest);
+#ifdef EDEN_FRAME_DIAG
+                thread->m_diag_runnable_ns = 0;
+#endif
                 hr = interface->RunThread(thread);
             }
 

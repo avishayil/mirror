@@ -14,6 +14,7 @@
 
 #include <fmt/ranges.h>
 
+#include "common/frame_diag.h"
 #include "common/logging.h"
 #include <ranges>
 #include "common/scope_exit.h"
@@ -219,6 +220,8 @@ void RendererVulkan::Composite(std::span<const Tegra::FramebufferConfig> framebu
         return;
     }
 
+    EDEN_DIAG_SCOPE(::Common::FrameDiag::Stage::Composite);
+
     RenderScreenshot(framebuffers);
     Frame* frame = present_manager.GetRenderFrame();
 
@@ -246,12 +249,16 @@ void RendererVulkan::Composite(std::span<const Tegra::FramebufferConfig> framebu
 
     scheduler.Flush(*frame->render_ready);
 
-    present_manager.Present(frame);
+    {
+        EDEN_DIAG_SCOPE(::Common::FrameDiag::Stage::Present);
+        present_manager.Present(frame);
+    }
 #ifdef HAS_LSFG
     scheduler.DispatchWork();
 #endif
 
     gpu.RendererFrameEndNotify();
+    EDEN_DIAG_FRAME_BOUNDARY();
     rasterizer.TickFrame();
 }
 

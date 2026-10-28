@@ -14,6 +14,7 @@
 #include "video_core/renderer_vulkan/renderer_vulkan.h"
 
 #include "common/assert.h"
+#include "common/frame_diag.h"
 #include "common/logging.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
@@ -241,14 +242,23 @@ void RasterizerVulkan::PrepareDraw(bool is_indexed, Func&& draw_func) {
     FlushWork();
     gpu_memory->FlushCaching();
 
-    GraphicsPipeline* const pipeline{pipeline_cache.CurrentGraphicsPipeline()};
+    GraphicsPipeline* pipeline;
+    {
+        EDEN_DIAG_SCOPE(::Common::FrameDiag::Stage::VkPipelineLookup);
+        pipeline = pipeline_cache.CurrentGraphicsPipeline();
+    }
     if (!pipeline) {
         return;
     }
     std::scoped_lock lock{buffer_cache.mutex, texture_cache.mutex};
     // update engine as channel may be different.
     pipeline->SetEngine(maxwell3d, gpu_memory);
-    if (!pipeline->Configure(is_indexed))
+    bool configured;
+    {
+        EDEN_DIAG_SCOPE(::Common::FrameDiag::Stage::VkDescriptorConfigure);
+        configured = pipeline->Configure(is_indexed);
+    }
+    if (!configured)
         return;
 
     UpdateDynamicStates();

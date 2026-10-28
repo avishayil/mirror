@@ -875,6 +875,10 @@ struct Values {
 
     // Debugging
     bool record_frame_times;
+    // When set (and the build was compiled with -DEDEN_FRAME_DIAG=ON), the per-frame handoff/GPU
+    // profiler captures latency histograms and periodically dumps them to the log. No effect in
+    // normal builds. See common/frame_diag.h.
+    Setting<bool> frame_diag_capture{linkage, false, "frame_diag_capture", Category::Debugging};
     Setting<bool> use_gdbstub{linkage, false, "use_gdbstub", Category::Debugging};
     Setting<u16> gdbstub_port{linkage, 6543, "gdbstub_port", Category::Debugging};
     SwitchableSetting<std::string> program_args{linkage,

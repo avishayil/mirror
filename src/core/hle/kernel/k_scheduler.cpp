@@ -9,6 +9,7 @@
 #include "common/assert.h"
 #include "common/bit_util.h"
 #include "common/fiber.h"
+#include "common/frame_diag.h"
 #include "common/logging.h"
 #include "core/arm/arm_interface.h"
 #include "core/core.h"
@@ -374,6 +375,8 @@ void KScheduler::SwitchThread(KernelCore& kernel, KThread* next_thread) {
     SetCurrentThread(kernel, next_thread);
     m_current_thread = next_thread;
 
+    EDEN_DIAG_SPAN_END(next_thread->m_diag_runnable_ns, ::Common::FrameDiag::Stage::HandoffEndWaitToSwitch);
+
     // Set the new Thread Local region.
     // cpu::SwitchThreadLocalRegion(GetInteger(next_thread->GetThreadLocalRegionAddress()));
 
@@ -510,6 +513,7 @@ void KScheduler::Unload(KernelCore& kernel, KThread* thread) {
 }
 
 void KScheduler::Reload(KernelCore& kernel, KThread* thread) {
+    EDEN_DIAG_SCOPE(::Common::FrameDiag::Stage::SchedReloadContext);
     kernel.PhysicalCore(m_core_id).LoadContext(thread);
 }
 
