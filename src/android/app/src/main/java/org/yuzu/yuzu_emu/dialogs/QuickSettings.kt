@@ -102,6 +102,9 @@ class QuickSettings(val emulationFragment: EmulationFragment) {
             val radioButton = com.google.android.material.radiobutton.MaterialRadioButton(emulationFragment.requireContext())
             radioButton.text = name
             radioButton.id = View.generateViewId()
+            // Generated IDs are not stable across recreation; don't let state restore
+            // fire the checked listener (see addBooleanSetting).
+            radioButton.isSaveEnabled = false
             radioButton.isChecked = index == currentIndex
             radioButton.setPadding(16, 8, 16, 8)
 
@@ -145,6 +148,10 @@ class QuickSettings(val emulationFragment: EmulationFragment) {
 
         titleView.text = YuzuApplication.appContext.getString(name)
         switchContainer.visibility = View.VISIBLE
+        // Every row shares R.id.setting_switch; instance-state restore would push stale
+        // checked-state into the wrong switches and fire the listener before native config
+        // is loaded. State is rebuilt from NativeConfig on creation anyway.
+        switchView.isSaveEnabled = false
         switchView.isChecked = setting.getBoolean()
 
         switchView.setOnCheckedChangeListener { _, isChecked ->
@@ -176,6 +183,8 @@ class QuickSettings(val emulationFragment: EmulationFragment) {
         titleView.text = YuzuApplication.appContext.getString(name)
         switchContainer.visibility = View.VISIBLE
 
+        // See addBooleanSetting: shared view ID, state restore must not fire the listener.
+        switchView.isSaveEnabled = false
         switchView.isChecked = isChecked
 
         switchView.setOnCheckedChangeListener { _, checked ->

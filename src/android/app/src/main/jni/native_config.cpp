@@ -59,11 +59,19 @@ void Java_org_yuzu_yuzu_1emu_utils_NativeConfig_unloadGlobalConfig(JNIEnv* env, 
 }
 
 void Java_org_yuzu_yuzu_1emu_utils_NativeConfig_reloadGlobalConfig(JNIEnv* env, jobject obj) {
+    if (!global_config) {
+        LOG_ERROR(Frontend, "[Android Native] Global config reload requested but not initialized");
+        return;
+    }
     global_config->AndroidConfig::ReloadAllValues();
     ResetFxChainToGlobal();
 }
 
 void Java_org_yuzu_yuzu_1emu_utils_NativeConfig_saveGlobalConfig(JNIEnv* env, jobject obj) {
+    if (!global_config) {
+        LOG_ERROR(Frontend, "[Android Native] Global config save requested but not initialized");
+        return;
+    }
     global_config->AndroidConfig::SaveAllValues();
 }
 
@@ -83,6 +91,10 @@ jboolean Java_org_yuzu_yuzu_1emu_utils_NativeConfig_isPerGameConfigLoaded(JNIEnv
 }
 
 void Java_org_yuzu_yuzu_1emu_utils_NativeConfig_savePerGameConfig(JNIEnv* env, jobject obj) {
+    if (!per_game_config) {
+        LOG_ERROR(Frontend, "[Android Native] Per-game config save requested but not initialized");
+        return;
+    }
     per_game_config->AndroidConfig::SaveAllValues();
 }
 
