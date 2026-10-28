@@ -248,6 +248,13 @@ struct Values {
     SwitchableSetting<bool> sync_core_speed{linkage, false, "sync_core_speed", Category::Core,
                                             Specialization::Default};
 
+    // When set, the Android ADPF performance-hint session reports the true per-frame interval
+    // (uncapped) and marks the emulation threads as performance-critical, asking the scheduler to
+    // keep clocks up for latency-bound titles. Off by default (no behavior change); opt-in because
+    // some vendor PerfHint implementations ignore it and it can raise power/heat.
+    SwitchableSetting<bool> adpf_max_performance{linkage, false, "adpf_max_performance",
+                                                 Category::Core, Specialization::Default};
+
     // Cpu
     SwitchableSetting<CpuBackend, true> cpu_backend{linkage,
 #ifdef HAS_NCE

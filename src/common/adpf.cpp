@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include "common/logging.h"
+#include "common/settings.h"
 
 namespace Common::ADPF {
 
@@ -140,6 +141,10 @@ AHintSession* CreateSessionFor(Session session, const std::vector<pid_t>& thread
     }
     if (session == Session::Background && api.set_power_efficiency != nullptr) {
         api.set_power_efficiency(handle, true);
+    } else if (session == Session::Render && api.set_power_efficiency != nullptr &&
+               Settings::values.adpf_max_performance.GetValue()) {
+        // Opt-in: mark the emulation-critical session explicitly non-power-efficient.
+        api.set_power_efficiency(handle, false);
     }
     return handle;
 }
@@ -268,8 +273,13 @@ void ReportFrameInterval() {
         return;
     }
 
-    const s64 ceiling = g_target_ns.load(std::memory_order_relaxed) * MAX_REPORTED_TARGETS;
-    actual = (std::min)(actual, ceiling);
+    // By default clamp the reported work to a few targets (avoids wild values). With
+    // adpf_max_performance, report the true per-frame interval uncapped so the governor sees the
+    // real overrun on latency-bound titles (helps only where the vendor PerfHint honors it).
+    if (!Settings::values.adpf_max_performance.GetValue()) {
+        const s64 ceiling = g_target_ns.load(std::memory_order_relaxed) * MAX_REPORTED_TARGETS;
+        actual = (std::min)(actual, ceiling);
+    }
 
     std::scoped_lock lock{g_mutex};
     SessionState& state = StateOf(Session::Render);
