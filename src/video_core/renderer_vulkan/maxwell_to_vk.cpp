@@ -295,7 +295,7 @@ FormatInfo SurfaceFormat(const Device& device, FormatType format_type, bool with
         }
     }
     bool const attachable = (tuple.usage & usage_attachable) != 0;
-    bool const storage = (tuple.usage & usage_storage) != 0;
+    bool storage = (tuple.usage & usage_storage) != 0;
     VkFormatFeatureFlags usage{};
     switch (format_type) {
     case FormatType::Buffer:
@@ -315,7 +315,17 @@ FormatInfo SurfaceFormat(const Device& device, FormatType format_type, bool with
         }
         break;
     }
-    return {device.GetSupportedFormat(tuple.format, usage, format_type), attachable, storage};
+    const VkFormat supported_format = device.GetSupportedFormat(tuple.format, usage, format_type);
+    // If the device cannot satisfy every requested feature (e.g. PowerVR lacks storage on
+    // B8G8R8A8), creating the image with VK_IMAGE_USAGE_STORAGE_BIT anyway is invalid Vulkan.
+    // Drop storage so image creation stays legal; shaders that image-store to such a surface
+    // were already broken and now fail visibly instead of with undefined behavior.
+    if (storage && (format_type == FormatType::Linear || format_type == FormatType::Optimal) &&
+        !device.IsFormatSupported(supported_format, VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT,
+                                  format_type)) {
+        storage = false;
+    }
+    return {supported_format, attachable, storage};
 }
 
 VkShaderStageFlagBits ShaderStage(Shader::Stage stage) {

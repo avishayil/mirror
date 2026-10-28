@@ -69,30 +69,37 @@ void WindowAdaptPass::Draw(const Device& device, RasterizerVulkan& rasterizer, S
         layer_it++;
     }
 
+    // PowerVR crashes in vkCmdClearAttachments; the render pass is then created with
+    // VK_ATTACHMENT_LOAD_OP_CLEAR and the background color goes through pClearValues instead.
+    const bool clear_via_load_op = device.HasBrokenClearAttachments();
+
     scheduler.Record([=](vk::CommandBuffer cmdbuf) {
         const f32 bg_red = Settings::values.bg_red.GetValue() / 255.0f;
         const f32 bg_green = Settings::values.bg_green.GetValue() / 255.0f;
         const f32 bg_blue = Settings::values.bg_blue.GetValue() / 255.0f;
-        const VkClearAttachment clear_attachment{
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .colorAttachment = 0,
-            .clearValue =
-                {
-                    .color = {.float32 = {bg_red, bg_green, bg_blue, 1.0f}},
-                },
-        };
-        const VkClearRect clear_rect{
-            .rect =
-                {
-                    .offset = {0, 0},
-                    .extent = render_area,
-                },
-            .baseArrayLayer = 0,
-            .layerCount = 1,
+        const VkClearValue clear_value{
+            .color = {.float32 = {bg_red, bg_green, bg_blue, 1.0f}},
         };
 
-        BeginRenderPass(cmdbuf, renderpass, host_framebuffer, render_area);
-        cmdbuf.ClearAttachments({clear_attachment}, {clear_rect});
+        BeginRenderPass(cmdbuf, renderpass, host_framebuffer, render_area,
+                        clear_via_load_op ? &clear_value : nullptr);
+        if (!clear_via_load_op) {
+            const VkClearAttachment clear_attachment{
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .colorAttachment = 0,
+                .clearValue = clear_value,
+            };
+            const VkClearRect clear_rect{
+                .rect =
+                    {
+                        .offset = {0, 0},
+                        .extent = render_area,
+                    },
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            };
+            cmdbuf.ClearAttachments({clear_attachment}, {clear_rect});
+        }
 
         for (size_t i = 0; i < layer_count; i++) {
             cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipelines[i]);
@@ -143,7 +150,8 @@ void WindowAdaptPass::CreateVertexShader(const Device& device) {
 }
 
 void WindowAdaptPass::CreateRenderPass(const Device& device, VkFormat frame_format) {
-    render_pass = CreateWrappedRenderPass(device, frame_format, VK_IMAGE_LAYOUT_UNDEFINED);
+    render_pass = CreateWrappedRenderPass(device, frame_format, VK_IMAGE_LAYOUT_UNDEFINED,
+                                          device.HasBrokenClearAttachments());
 }
 
 void WindowAdaptPass::CreatePipelines(const Device& device) {

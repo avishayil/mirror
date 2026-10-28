@@ -106,6 +106,28 @@ constexpr std::array B10G11R11_UFLOAT_PACK32{
     VK_FORMAT_UNDEFINED,
 };
 
+// VK_FORMAT_A8B8G8R8_*_PACK32 is byte-identical to VK_FORMAT_R8G8B8A8_* on little-endian
+// hosts; some drivers (e.g. PowerVR) expose fewer features for the PACK32 aliases.
+constexpr std::array A8B8G8R8_UNORM_PACK32{
+    VK_FORMAT_R8G8B8A8_UNORM,
+    VK_FORMAT_UNDEFINED,
+};
+
+constexpr std::array A8B8G8R8_SNORM_PACK32{
+    VK_FORMAT_R8G8B8A8_SNORM,
+    VK_FORMAT_UNDEFINED,
+};
+
+constexpr std::array A8B8G8R8_UINT_PACK32{
+    VK_FORMAT_R8G8B8A8_UINT,
+    VK_FORMAT_UNDEFINED,
+};
+
+constexpr std::array A8B8G8R8_SINT_PACK32{
+    VK_FORMAT_R8G8B8A8_SINT,
+    VK_FORMAT_UNDEFINED,
+};
+
 } // namespace Alternatives
 
 template <typename T>
@@ -140,6 +162,14 @@ constexpr const VkFormat* GetFormatAlternatives(VkFormat format) {
         return Alternatives::VK_FORMAT_A4B4G4R4_UNORM_PACK16.data();
     case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
         return Alternatives::B10G11R11_UFLOAT_PACK32.data();
+    case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+        return Alternatives::A8B8G8R8_UNORM_PACK32.data();
+    case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
+        return Alternatives::A8B8G8R8_SNORM_PACK32.data();
+    case VK_FORMAT_A8B8G8R8_UINT_PACK32:
+        return Alternatives::A8B8G8R8_UINT_PACK32.data();
+    case VK_FORMAT_A8B8G8R8_SINT_PACK32:
+        return Alternatives::A8B8G8R8_SINT_PACK32.data();
     default:
         return nullptr;
     }
@@ -469,6 +499,7 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
     const bool is_mvk = driver_id == VK_DRIVER_ID_MOLTENVK;
     const bool is_qualcomm = driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY;
     const bool is_turnip = driver_id == VK_DRIVER_ID_MESA_TURNIP;
+    const bool is_imagination = driver_id == VK_DRIVER_ID_IMAGINATION_PROPRIETARY;
 
     if (!is_suitable)
         LOG_WARNING(Render_Vulkan, "Unsuitable driver - continuing anyways");
@@ -580,6 +611,17 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
                 api_level, major, minor);
         }
 #endif
+    }
+
+    if (is_imagination) {
+        // Pixel 10 (Tensor G5) PowerVR DXT: vkCmdClearAttachments segfaults inside the
+        // driver during game boot (eden-emulator/Issue-Reports#561).
+        has_broken_clear_attachments = true;
+        LOG_WARNING(Render_Vulkan,
+                    "PowerVR proprietary driver detected: {} ({}), version 0x{:X}; enabling "
+                    "workarounds: broken vkCmdClearAttachments",
+                    properties.driver.driverName, properties.driver.driverInfo,
+                    properties.properties.driverVersion);
     }
 
     if (is_nvidia) {
@@ -860,6 +902,29 @@ void Device::SaveStaticPipelineCache() const {
     }
 }
 
+void Device::LogUnsupportedFormat(VkFormat wanted_format, VkFormatFeatureFlags wanted_usage,
+                                  FormatType format_type, bool has_alternatives) const {
+    // Log each distinct failure once; per-call spam degrades sessions on affected drivers.
+    const u64 key = static_cast<u64>(wanted_format) ^ (static_cast<u64>(wanted_usage) << 24) ^
+                    (static_cast<u64>(format_type) << 56);
+    {
+        std::scoped_lock lock{logged_unsupported_formats_mutex};
+        if (!logged_unsupported_formats.insert(key).second) {
+            return;
+        }
+    }
+    const auto it = format_properties.find(wanted_format);
+    const VkFormatFeatureFlags supported_usage =
+        it != format_properties.end() ? GetFormatFeatures(it->second, format_type) : 0;
+    LOG_ERROR(Render_Vulkan,
+              "Format={} with usage=0x{:X} and type={} is not supported by the host hardware{}; "
+              "supported usage=0x{:X}, missing=0x{:X}",
+              wanted_format, static_cast<u32>(wanted_usage), format_type,
+              has_alternatives ? " and no alternative is supported" : " and has no alternatives",
+              static_cast<u32>(supported_usage),
+              static_cast<u32>(wanted_usage & ~supported_usage));
+}
+
 VkFormat Device::GetSupportedFormat(VkFormat wanted_format, VkFormatFeatureFlags wanted_usage,
                                     FormatType format_type) const {
     if (IsFormatSupported(wanted_format, wanted_usage, format_type)) {
@@ -868,10 +933,7 @@ VkFormat Device::GetSupportedFormat(VkFormat wanted_format, VkFormatFeatureFlags
     // The wanted format is not supported by hardware, search for alternatives
     const VkFormat* alternatives = GetFormatAlternatives(wanted_format);
     if (alternatives == nullptr) {
-        LOG_ERROR(Render_Vulkan,
-                  "Format={} with usage={} and type={} has no defined alternatives and host "
-                  "hardware does not support it",
-                  wanted_format, wanted_usage, format_type);
+        LogUnsupportedFormat(wanted_format, wanted_usage, format_type, false);
         return wanted_format;
     }
 
@@ -887,10 +949,7 @@ VkFormat Device::GetSupportedFormat(VkFormat wanted_format, VkFormatFeatureFlags
     }
 
     // No alternatives found, panic
-    LOG_ERROR(Render_Vulkan,
-              "Format={} with usage={} and type={} is not supported by the host hardware and "
-              "doesn't support any of the alternatives",
-              wanted_format, wanted_usage, format_type);
+    LogUnsupportedFormat(wanted_format, wanted_usage, format_type, true);
     return wanted_format;
 }
 

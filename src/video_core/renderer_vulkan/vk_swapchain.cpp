@@ -310,21 +310,30 @@ void Swapchain::CreateSwapchain(const VkSurfaceCapabilitiesKHR& capabilities) {
         swapchain_ci.queueFamilyIndexCount = static_cast<u32>(queue_indices.size());
         swapchain_ci.pQueueFamilyIndices = queue_indices.data();
     }
-    // According to Vulkan spec, when using VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR,
-    // the base format (imageFormat) MUST be included in pViewFormats
-    const std::array view_formats{
-        swapchain_ci.imageFormat,  // Base format MUST be first
-        VK_FORMAT_B8G8R8A8_UNORM,
-        VK_FORMAT_B8G8R8A8_SRGB,
-#ifdef __ANDROID__
-        VK_FORMAT_R8G8B8A8_UNORM,  // Android may use RGBA
-        VK_FORMAT_R8G8B8A8_SRGB,
-#endif
-    };
+    // According to the Vulkan spec, when using VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR,
+    // the base format (imageFormat) MUST be included in pViewFormats (in any position).
+    // Only list imageFormat's own UNORM/SRGB pair — never both the BGRA and RGBA
+    // orderings at once. Some drivers (e.g. PowerVR proprietary) corrupt output when a
+    // mutable-format swapchain's view list mixes channel orderings, even though it is
+    // spec-legal. Eden never creates a view of a swapchain image in another format
+    // (swapchain images are only blit/copy destinations), so the base pair suffices.
+    const std::array view_formats = [&]() -> std::array<VkFormat, 2> {
+        switch (swapchain_ci.imageFormat) {
+        case VK_FORMAT_R8G8B8A8_UNORM:
+        case VK_FORMAT_R8G8B8A8_SRGB:
+            return {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_SRGB};
+        case VK_FORMAT_B8G8R8A8_UNORM:
+        case VK_FORMAT_B8G8R8A8_SRGB:
+            return {VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_B8G8R8A8_SRGB};
+        default:
+            return {swapchain_ci.imageFormat, VK_FORMAT_UNDEFINED};
+        }
+    }();
+    const u32 view_format_count = view_formats[1] == VK_FORMAT_UNDEFINED ? 1U : 2U;
     VkImageFormatListCreateInfo format_list{
         .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO_KHR,
         .pNext = nullptr,
-        .viewFormatCount = static_cast<u32>(view_formats.size()),
+        .viewFormatCount = view_format_count,
         .pViewFormats = view_formats.data(),
     };
     if (device.IsKhrSwapchainMutableFormatEnabled()) {

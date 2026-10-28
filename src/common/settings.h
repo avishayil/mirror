@@ -718,6 +718,10 @@ struct Values {
     Setting<bool> patch_old_qcom_drivers{linkage, false, "patch_old_qcom_drivers",
                                          Category::RendererDebug};
 #endif
+    // On drivers with broken vkCmdClearAttachments (PowerVR), also reroute the game
+    // renderer's attachment clears through draw-based clears where semantics allow.
+    Setting<bool> avoid_clear_attachments{linkage, false, "avoid_clear_attachments",
+                                          Category::RendererDebug};
     SwitchableSetting<bool> disable_buffer_reorder{linkage, false, "disable_buffer_reorder",
                                          Category::RendererDebug,
                                          Specialization::Default,

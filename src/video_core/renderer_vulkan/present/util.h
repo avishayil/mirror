@@ -28,7 +28,8 @@ void ClearColorImage(vk::CommandBuffer& cmdbuf, VkImage image);
 
 vk::ImageView CreateWrappedImageView(const Device& device, vk::Image& image, VkFormat format);
 vk::RenderPass CreateWrappedRenderPass(const Device& device, VkFormat format,
-                                       VkImageLayout initial_layout = VK_IMAGE_LAYOUT_GENERAL);
+                                       VkImageLayout initial_layout = VK_IMAGE_LAYOUT_GENERAL,
+                                       bool clear = false);
 vk::Framebuffer CreateWrappedFramebuffer(const Device& device, vk::RenderPass& render_pass,
                                          vk::ImageView& dest_image, VkExtent2D extent);
 vk::Sampler CreateWrappedSampler(const Device& device, VkFilter filter = VK_FILTER_LINEAR);
@@ -66,6 +67,6 @@ vk::Sampler CreateNearestNeighborSampler(const Device& device);
 vk::Sampler CreateCubicSampler(const Device& device, VkCubicFilterWeightsQCOM qcom_weights);
 
 void BeginRenderPass(vk::CommandBuffer& cmdbuf, VkRenderPass render_pass, VkFramebuffer framebuffer,
-                     VkExtent2D extent);
+                     VkExtent2D extent, const VkClearValue* clear_value = nullptr);
 
 } // namespace Vulkan

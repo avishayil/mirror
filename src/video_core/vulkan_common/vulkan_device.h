@@ -7,6 +7,7 @@
 #pragma once
 
 #include <atomic>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <span>
@@ -943,6 +944,11 @@ FN_MAX_LIMIT_LIST
         return has_broken_parallel_compiling;
     }
 
+    /// Returns true if vkCmdClearAttachments crashes on the current driver.
+    bool HasBrokenClearAttachments() const {
+        return has_broken_clear_attachments;
+    }
+
     /// Returns the vendor name reported from Vulkan.
     std::string_view GetVendorName() const {
         return properties.driver.driverName;
@@ -1143,6 +1149,10 @@ private:
     void LoadStaticPipelineCache();
     void SaveStaticPipelineCache() const;
 
+    /// Logs one deduplicated error for an unsupported format request.
+    void LogUnsupportedFormat(VkFormat wanted_format, VkFormatFeatureFlags wanted_usage,
+                              FormatType format_type, bool has_alternatives) const;
+
 private:
     VkInstance instance;         ///< Vulkan instance.
     VmaAllocator allocator;      ///< VMA allocator.
@@ -1225,6 +1235,7 @@ private:
     bool has_broken_cube_compatibility{};      ///< Has broken cube compatibility bit
     bool has_broken_descriptor_aliasing{};     ///< Miscompiles descriptors aliased on one binding
     bool has_broken_parallel_compiling{};      ///< Has broken parallel shader compiling.
+    bool has_broken_clear_attachments{};       ///< vkCmdClearAttachments crashes the driver.
     bool has_renderdoc{};                      ///< Has RenderDoc attached
     bool has_nsight_graphics{};                ///< Has Nsight Graphics attached
     bool has_radeon_gpu_profiler{};            ///< Has Radeon GPU Profiler attached.
@@ -1252,6 +1263,10 @@ private:
 
     /// Format properties dictionary.
     ::Common::unordered_map<VkFormat, VkFormatProperties> format_properties;
+
+    /// Deduplication keys of already-logged unsupported format requests.
+    mutable std::mutex logged_unsupported_formats_mutex;
+    mutable std::set<u64> logged_unsupported_formats;
 
     /// Nsight Aftermath GPU crash tracker
     std::unique_ptr<NsightAftermathTracker> nsight_aftermath_tracker;

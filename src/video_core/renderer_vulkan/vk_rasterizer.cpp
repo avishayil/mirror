@@ -501,6 +501,14 @@ void RasterizerVulkan::Clear(u32 layer_count) {
     query_cache.CounterEnable(VideoCommon::QueryType::ZPassPixelCount64, maxwell3d->regs.zpass_pixel_count_enable);
     UpdateViewportsState(regs);
 
+    // Opt-in fallback for drivers that crash in vkCmdClearAttachments (PowerVR). The
+    // draw-based clear only matches ClearAttachments semantics on layer 0 (and, for
+    // color, float formats on attachment 0); other clears keep the regular path.
+    const bool avoid_clear_attachments =
+        device.HasBrokenClearAttachments() &&
+        Settings::values.avoid_clear_attachments.GetValue() &&
+        regs.clear_surface.layer == 0 && layer_count == 1;
+
     const u32 color_attachment = regs.clear_surface.RT;
     if (use_color && framebuffer->HasAspectColorBit(color_attachment)) {
         const auto format = VideoCore::Surface::PixelFormatFromRenderTargetFormat(regs.rt[color_attachment].format);
@@ -521,6 +529,12 @@ void RasterizerVulkan::Clear(u32 layer_count) {
         if (color_full_channels) {
             if (can_defer_clear) {
                 scheduler.DeferColorClear(framebuffer, color_attachment, clear_value);
+            } else if (avoid_clear_attachments && color_attachment == 0 && !is_integer) {
+                const Region2D dst_region = {
+                    Offset2D{.x = clear_rect.rect.offset.x, .y = clear_rect.rect.offset.y},
+                    Offset2D{.x = clear_rect.rect.offset.x + s32(clear_rect.rect.extent.width),
+                             .y = clear_rect.rect.offset.y + s32(clear_rect.rect.extent.height)}};
+                blit_image.ClearColor(framebuffer, 0xF, regs.clear_color, dst_region);
             } else {
                 scheduler.Record([color_attachment, clear_value, clear_rect](vk::CommandBuffer cmdbuf) {
                     const VkClearAttachment attachment{
@@ -569,6 +583,15 @@ void RasterizerVulkan::Clear(u32 layer_count) {
         ds_value.depthStencil.depth = regs.clear_depth;
         ds_value.depthStencil.stencil = regs.clear_stencil;
         scheduler.DeferDepthStencilClear(framebuffer, ds_value);
+    } else if (avoid_clear_attachments) {
+        const bool clear_stencil_aspect = (aspect_flags & VK_IMAGE_ASPECT_STENCIL_BIT) != 0;
+        const Region2D dst_region = {
+            Offset2D{.x = clear_rect.rect.offset.x, .y = clear_rect.rect.offset.y},
+            Offset2D{.x = clear_rect.rect.offset.x + s32(clear_rect.rect.extent.width),
+                     .y = clear_rect.rect.offset.y + s32(clear_rect.rect.extent.height)}};
+        blit_image.ClearDepthStencil(framebuffer, (aspect_flags & VK_IMAGE_ASPECT_DEPTH_BIT) != 0,
+                                     regs.clear_depth, clear_stencil_aspect ? 0xFF : 0x00,
+                                     regs.clear_stencil, 0xFF, dst_region);
     } else {
         scheduler.Record([clear_depth = regs.clear_depth, clear_stencil = regs.clear_stencil,
                           clear_rect, aspect_flags](vk::CommandBuffer cmdbuf) {
