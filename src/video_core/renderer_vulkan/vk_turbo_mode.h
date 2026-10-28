@@ -26,9 +26,13 @@ public:
 private:
     void Run(std::stop_token stop_token);
 
-#ifndef __ANDROID__
+    // The spinner needs its own device on every platform now (Android included) so it can keep
+    // non-Adreno GPUs (e.g. PowerVR) clocked up via a background compute workload.
     Device m_device;
     MemoryAllocator m_allocator;
+#if defined(__ANDROID__) && defined(ARCHITECTURE_arm64)
+    // Adreno/Qualcomm has a direct kernel turbo hook; everything else uses the compute spinner.
+    bool m_use_adrenotools{};
 #endif
     std::mutex m_submission_lock;
     std::condition_variable_any m_submission_cv;

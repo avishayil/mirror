@@ -182,8 +182,15 @@ try
 {
 
     if (Settings::values.renderer_force_max_clock.GetValue() && device.ShouldBoostClocks()) {
-        turbo_mode.emplace(instance, dld);
-        scheduler.RegisterOnSubmit([this] { turbo_mode->QueueSubmitted(); });
+        // The boost spinner creates its own Vulkan device; if that fails (e.g. on a driver that
+        // rejects a second logical device) skip it rather than taking the renderer down.
+        try {
+            turbo_mode.emplace(instance, dld);
+            scheduler.RegisterOnSubmit([this] { turbo_mode->QueueSubmitted(); });
+        } catch (const std::exception& e) {
+            LOG_WARNING(Render_Vulkan, "GPU clock boost unavailable: {}", e.what());
+            turbo_mode.reset();
+        }
     }
 
 #ifdef HAS_RESHADE

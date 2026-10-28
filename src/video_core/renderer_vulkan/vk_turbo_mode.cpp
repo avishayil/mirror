@@ -20,10 +20,10 @@ namespace Vulkan {
 using namespace Common::Literals;
 
 TurboMode::TurboMode(const vk::Instance& instance, const vk::InstanceDispatch& dld)
-#ifndef __ANDROID__
-    : m_device{CreateDevice(instance, dld, VK_NULL_HANDLE)}, m_allocator{m_device}
+    : m_device{CreateDevice(instance, dld, VK_NULL_HANDLE)}, m_allocator{m_device} {
+#if defined(__ANDROID__) && defined(ARCHITECTURE_arm64)
+    m_use_adrenotools = m_device.GetDriverID() == VK_DRIVER_ID_QUALCOMM_PROPRIETARY;
 #endif
-{
     {
         std::scoped_lock lk{m_submission_lock};
         m_submission_time = std::chrono::steady_clock::now();
@@ -40,7 +40,6 @@ void TurboMode::QueueSubmitted() {
 }
 
 void TurboMode::Run(std::stop_token stop_token) {
-#ifndef __ANDROID__
     auto& dld = m_device.GetLogical();
 
     // Allocate buffer. 2MiB should be sufficient.
@@ -151,14 +150,17 @@ void TurboMode::Run(std::stop_token stop_token) {
     // Create a single command buffer.
     auto cmdbufs = command_pool.Allocate(1, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
     auto cmdbuf = vk::CommandBuffer{cmdbufs[0], m_device.GetDispatchLoader()};
-#endif
 
     while (!stop_token.stop_requested()) {
-#ifdef __ANDROID__
-#ifdef ARCHITECTURE_arm64
-        adrenotools_set_turbo(true);
+#if defined(__ANDROID__) && defined(ARCHITECTURE_arm64)
+        // Adreno/Qualcomm: direct kernel turbo hook.
+        if (m_use_adrenotools) {
+            adrenotools_set_turbo(true);
+        } else
 #endif
-#else
+        {
+        // Everything else (incl. PowerVR): keep the GPU busy with a compute dispatch so the
+        // load-based devfreq governor ramps the clock up.
         // Reset the fence.
         fence.Reset();
 
@@ -224,7 +226,8 @@ void TurboMode::Run(std::stop_token stop_token) {
 
         // Wait for completion.
         fence.Wait();
-#endif
+        }
+
         // Wait for the next graphics queue submission if necessary.
         std::unique_lock lk{m_submission_lock};
         m_submission_cv.wait(lk, stop_token, [this] {
@@ -233,7 +236,9 @@ void TurboMode::Run(std::stop_token stop_token) {
         });
     }
 #if defined(__ANDROID__) && defined(ARCHITECTURE_arm64)
-    adrenotools_set_turbo(false);
+    if (m_use_adrenotools) {
+        adrenotools_set_turbo(false);
+    }
 #endif
 }
 
