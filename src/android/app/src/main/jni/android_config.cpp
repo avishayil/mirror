@@ -203,6 +203,17 @@ void AndroidConfig::ReadAndroidPlayerValues(std::size_t player_index) {
     }
     player.use_system_vibrator = ReadBooleanSetting(
         std::string(player_prefix).append("use_system_vibrator"), player_index == 0);
+
+    // Android never persisted the connection state before, so these are read last to mirror the
+    // desktop frontend: without them no npad is ever connected at boot and games stall on the
+    // controller-select applet (the on-screen overlay has nothing to drive).
+    std::string connected_key = player_prefix;
+    player.connected = ReadBooleanSetting(connected_key.append("connected"),
+                                          std::make_optional(player_index == 0));
+
+    player.controller_type = Settings::ControllerType(
+        ReadIntegerSetting(std::string(player_prefix).append("type"),
+                           u8(Settings::ControllerType::ProController)));
 }
 
 void AndroidConfig::ReadAndroidControlValues() {
@@ -212,6 +223,23 @@ void AndroidConfig::ReadAndroidControlValues() {
     for (std::size_t p = 0; p < Settings::values.players.GetValue().size(); ++p) {
         ReadAndroidPlayerValues(p);
     }
+
+    // When player 1 is a handheld controller the Handheld npad (index 8) is the one that must be
+    // connected, while the Player 1 npad stays disconnected. This matches ConnectController() in
+    // native_input.cpp (the in-app Controls path) and the desktop frontend's handheld handling.
+    auto& players = Settings::values.players.GetValue();
+    if (players[0].controller_type == Settings::ControllerType::Handheld) {
+        Settings::values.use_docked_mode.SetGlobal(!IsCustomConfig());
+        Settings::values.use_docked_mode.SetValue(Settings::ConsoleMode::Handheld);
+
+        static constexpr std::size_t HANDHELD_INDEX = 8;
+        if (players[0].connected) {
+            players[HANDHELD_INDEX] = players[0];
+            players[HANDHELD_INDEX].connected = true;
+            players[0].connected = false;
+        }
+    }
+
     if (IsCustomConfig()) {
         EndGroup();
         return;
@@ -359,6 +387,12 @@ void AndroidConfig::SaveAndroidPlayerValues(std::size_t player_index) {
     }
     WriteBooleanSetting(std::string(player_prefix).append("use_system_vibrator"),
                         player.use_system_vibrator, std::make_optional(player_index == 0));
+
+    // Persist the connection state so it survives a restart (mirrors ReadAndroidPlayerValues).
+    WriteBooleanSetting(std::string(player_prefix).append("connected"), player.connected,
+                        std::make_optional(player_index == 0));
+    WriteIntegerSetting(std::string(player_prefix).append("type"), u8(player.controller_type),
+                        std::make_optional(u8(Settings::ControllerType::ProController)));
 }
 
 void AndroidConfig::SaveAndroidControlValues() {

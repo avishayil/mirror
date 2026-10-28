@@ -1627,6 +1627,29 @@ void EmulatedController::SetSupportedNpadStyleTag(NpadStyleTag supported_styles)
         Connect();
         return;
     }
+
+    // General fallback: the game restricts controllers to a set that excludes the configured
+    // type AND neither Pro/Dual swap applies (e.g. Pokémon: Let's Go only supports Handheld /
+    // single Joy-Con / Poké Ball Plus, not Pro or Dual). Reconnect as the first style the game
+    // actually supports so the controller stays connected and input (incl. the Android on-screen
+    // overlay) reaches the game, preferring full-button layouts.
+    const auto try_fallback = [&](bool supported, NpadStyleIndex style) {
+        if (!supported) {
+            return false;
+        }
+        LOG_WARNING(Service_HID, "Reconnecting unsupported controller type {} as supported type {}",
+                    npad_type.load(), style);
+        SetNpadStyleIndex(style);
+        Connect();
+        return true;
+    };
+    if (try_fallback(supported_style_tag.joycon_dual, NpadStyleIndex::JoyconDual) ||
+        try_fallback(supported_style_tag.handheld, NpadStyleIndex::Handheld) ||
+        try_fallback(supported_style_tag.joycon_right, NpadStyleIndex::JoyconRight) ||
+        try_fallback(supported_style_tag.joycon_left, NpadStyleIndex::JoyconLeft) ||
+        try_fallback(supported_style_tag.gamecube, NpadStyleIndex::GameCube)) {
+        return;
+    }
     LOG_ERROR(Service_HID, "Controller type {} is not supported. Disconnecting controller", npad_type.load());
 }
 
