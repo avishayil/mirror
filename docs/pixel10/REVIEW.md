@@ -77,7 +77,23 @@ native**; ~3.85 ms average condvar wait), which multiplies into the ~48 ms frame
 core or the GPU is ever saturated (hardware ~75% idle; CPU prime cores stay parked low because the
 governor sees no sustained load).
 
+**Follow-up after your review (P2/P3, on-device):**
+- **Clocks are not the limiter (both).** Forcing `use_speed_limit=100%` made the governor boost CPU
+  prime cores **800 MHz → ~3.4 GHz** (the unlocked 29 kHz vsync was suppressing them), yet overworld
+  FPS stayed ~20 — same as the earlier GPU-clock boost. Two independent clock boosts, zero FPS
+  change ⇒ purely latency-bound.
+- **Opportunity A (core placement) disproven.** Actual core (`/proc/<tid>/stat` field 39): all
+  emulation threads run on the **big cluster (cpu2-7)**, not efficiency cores — though they migrate
+  heavily across it.
+- **Wakeup latency is fast (your causal-gap question, answered).** Instrumented runnable→running
+  (stamp at `KThread::EndWait`, measure at `KScheduler::SwitchThread`): **~20 µs average** over
+  ~16-18k wakes/s. So the scheduler is **not** slow to run woken threads — this **closes the "slow
+  wakeup" line (P4/P5)**. The bottleneck is the **volume**: ~800 handoffs/frame × ~20 µs fixed
+  per-switch HLE cost (fiber/NCE context restore + scheduler lock) ≈ tens of ms/frame, serialized,
+  clock-insensitive. ~20 µs/switch is ~10× a native futex wake (~1-2 µs).
+
 ## 5. Questions for the reviewer
+(Updated by the P3 result above — wakeup *latency* is fast; the open lever is per-switch *throughput*.)
 1. Is the HLE-kernel `svcArbitrateLock` / condition-variable fast-path and thread-wakeup under NCE a
    known, improvable latency source? Is the ~56 µs/contended-lock plausibly emulation overhead that
    can be cut (e.g. userspace fast-path for more lock/unlock cases, lighter `KScheduler` reschedule,

@@ -74,3 +74,50 @@ thread-wakeup latency (KScheduler reschedule + host futex/cv wake under NCE); in
 userspace fast-path can resolve more uncontended/contended locks without a full syscall+reschedule;
 assess core-affinity/co-scheduling of the contending guest threads to cut cross-core wakeup latency.
 All deep, correctness-sensitive HLE-kernel work — out of scope to land here; flagged for the reviewer.
+
+## Reviewer-roadmap results (2026-10-28): clocks ruled out on BOTH CPU and GPU
+
+Acting on the external review (P0-P2):
+- **Opportunity A (CPU-core placement) — disproven.** Actual core per guest thread
+  (`/proc/<tid>/stat` field 39) in the overworld: all emulation threads run on the **big cluster
+  (cpu2-7)**, not the little cores (0-1) — e.g. CPUCore_0 observed on 5/6/7, GPU/VulkanWorker on 6-7.
+  They are *not* mis-placed on efficiency cores. They do **migrate heavily** across the big cluster
+  every sample (a secondary cost), and those big cores are the ones clocked low.
+- **Opportunity B (unlocked emulated-vsync) / CPU clock — ruled out for FPS.** Setting
+  `use_speed_limit=100%` (vs unlocked) made the governor boost the prime cores **800 MHz → ~3.4 GHz
+  (cpu7), 533 → up to 3.0 GHz (cpu6)** — a ~4× CPU clock increase — yet overworld **FPS stayed 19-20,
+  unchanged.** So the unlocked 29 kHz vsync was suppressing CPU clocks, but CPU clock is **not** the
+  FPS limiter.
+
+**Combined with the earlier GPU-clock result (396→864 MHz, FPS unchanged), two independent clock
+boosts — CPU and GPU — produced zero FPS change.** This is decisive: the overworld is **purely
+latency-bound**, not clock/throughput-bound on either processor. The reviewer's caution holds — the
+large summed sync blocked-time is dominated by *latency* (dependency waits + handoff/wakeup
+round-trips), which faster clocks do not shorten.
+
+**Open (P3, the decisive measurement):** split the ~3.85 ms average condvar wait into legitimate
+waiting-for-the-producer vs emulator/host wakeup latency (runnable→running). Only the latter is
+fixable (P4/P5); if the former dominates, the overworld limit is inherent to emulating this engine's
+thread structure. Method: per-guest-thread runnable→running latency (KScheduler/KThread, sampled
+histograms) + a Perfetto sched trace.
+
+### P3 result (2026-10-28): wakeup is fast — it's handoff VOLUME × fixed per-switch cost
+
+Instrumented runnable→running latency (stamp at `KThread::EndWait`, measure at
+`KScheduler::SwitchThread`): in the overworld, **~16,000-18,000 wakes/s, average runnable→running
+= ~20 µs** (rare max spikes 5-54 ms). So a woken guest thread runs ~20 µs later — the emulator/host
+scheduler is **not** slow to run woken threads. This **closes the reviewer's P4/P5 "scheduler wakeup
+latency" direction**: the ~3.85 ms condvar waits are not dominated by runnable→running overhead.
+
+Reframed bottleneck: ~800 guest thread handoffs/frame (the ~16k wakes/s ÷ ~20 fps) × ~20 µs fixed
+per-handoff HLE cost (wakeup + scheduler lock + fiber/NCE context restore) ≈ tens of ms/frame, fully
+serialized along the engine's dependency chain. This is consistent with *every* prior result:
+clock-insensitive (both CPU and GPU boosts did nothing — a fixed per-switch cost doesn't scale with
+clock), GPU idle, and fast-per-wakeup-but-very-many. ~20 µs/context-switch is ~10× a native futex
+wake (~1-2 µs), so the lever — if any — is **reducing the per-handoff emulation cost** (HLE
+`KScheduler`/fiber-switch/NCE context save-restore), i.e. the reviewer's P4, but applied to
+*throughput of switches* rather than *latency of one wait*. That is deep, correctness-sensitive
+kernel/NCE work with an uncertain floor (~20 µs may be near the practical minimum), and reducing the
+*count* of handoffs isn't possible (it's the game's threading). Net: the overworld ~20 FPS is, to a
+first approximation, an inherent cost of emulating this finely-threaded engine's ~800
+context-switches/frame on the HLE kernel + NCE at this device's clocks.
