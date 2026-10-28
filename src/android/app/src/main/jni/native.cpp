@@ -7,6 +7,7 @@
 #define VMA_IMPLEMENTATION
 #include "video_core/vulkan_common/vma.h"
 
+#include <atomic>
 #include <codecvt>
 #include <cstdio>
 #include <cstring>
@@ -525,6 +526,24 @@ static Core::SystemResultStatus RunEmulation(const std::string& filepath,
         LOG_CRITICAL(Frontend, "failed to load: filepath empty!");
         return Core::SystemResultStatus::ErrorLoader;
     }
+
+    // Guard against a second, concurrent emulation start. During an Android activity/surface
+    // recreation (e.g. the rotation into landscape when launching a game) a second
+    // EmulationFragment can spawn another NativeEmulation thread and call run() again while the
+    // first is still initializing. Two overlapping starts each re-initialize the kernel's shared
+    // resource managers, and the second re-init zeroes memory the first's in-flight guest boot is
+    // still using (observed as a page-group corruption and boot crash on Pixel 10 / PowerVR).
+    // The check happens before the ShutdownEmulation scope guard so the duplicate start returns
+    // without tearing down the live emulation.
+    static std::atomic<bool> s_emulation_active{false};
+    bool expected_inactive = false;
+    if (!s_emulation_active.compare_exchange_strong(expected_inactive, true)) {
+        LOG_WARNING(Frontend, "Emulation already running; ignoring duplicate run request");
+        return Core::SystemResultStatus::Success;
+    }
+    SCOPE_EXIT {
+        s_emulation_active.store(false);
+    };
 
     SCOPE_EXIT {
         EmulationSession::GetInstance().ShutdownEmulation();
